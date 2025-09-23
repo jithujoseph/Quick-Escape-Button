@@ -1,13 +1,13 @@
 <?php
 /**
  * Plugin Name:       Quick Escape Button
- * Plugin URI:        https://example.com/plugins/quick-escape-button/
+ * Plugin URI:        https://github.com/jithujoseph/Quick-Escape-Button
  * Description:       Adds a discreet button that quickly navigates away from the current page using window.location.replace().
- * Version:           1.2.3
+ * Version:           1.4.0
  * Requires at least: 5.2
  * Requires PHP:      7.2
- * Author:            Your Name
- * Author URI:        https://example.com/
+ * Author:            Jithin Ayinickal
+ * Author URI:        http://www.jithinaj.com/
  * License:           GPL v2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       quick-escape-button
@@ -77,6 +77,47 @@ function qeb_settings_init() {
         'quickEscapeButton',
         'qeb_section_main'
     );
+
+    // New field for button color.
+    add_settings_field(
+        'qeb_button_color',
+        'Button Color',
+        'qeb_button_color_callback',
+        'quickEscapeButton',
+        'qeb_section_main'
+    );
+    
+    // New section for display rules.
+    add_settings_section(
+        'qeb_section_display_rules',
+        'Display Rules',
+        null,
+        'quickEscapeButton'
+    );
+    
+    add_settings_field(
+        'qeb_display_rule',
+        'Show Button On',
+        'qeb_display_rule_callback',
+        'quickEscapeButton',
+        'qeb_section_display_rules'
+    );
+    
+    add_settings_field(
+        'qeb_selected_pages',
+        'Select Pages',
+        'qeb_selected_pages_callback',
+        'quickEscapeButton',
+        'qeb_section_display_rules'
+    );
+    
+    add_settings_field(
+        'qeb_include_child_pages',
+        'Include Child Pages',
+        'qeb_include_child_pages_callback',
+        'quickEscapeButton',
+        'qeb_section_display_rules'
+    );
 }
 add_action( 'admin_init', 'qeb_settings_init' );
 
@@ -127,6 +168,50 @@ function qeb_position_callback() {
     <?php
 }
 
+function qeb_button_color_callback() {
+    $options = get_option( 'qeb_settings' );
+    $color = isset( $options['button_color'] ) ? $options['button_color'] : '#f44336';
+    echo '<input type="color" name="qeb_settings[button_color]" value="' . esc_attr( $color ) . '" />';
+    echo '<p class="description">Select a color for the floating button. This option is only for the Floating Button display type.</p>';
+}
+
+function qeb_display_rule_callback() {
+    $options = get_option( 'qeb_settings' );
+    $rule = isset( $options['display_rule'] ) ? $options['display_rule'] : 'all';
+    ?>
+    <label><input type="radio" name="qeb_settings[display_rule]" value="all" <?php checked( $rule, 'all' ); ?> /> Entire Site</label><br>
+    <label><input type="radio" name="qeb_settings[display_rule]" value="pages" <?php checked( $rule, 'pages' ); ?> /> Selected Pages</label>
+    <?php
+}
+
+function qeb_selected_pages_callback() {
+    $options = get_option( 'qeb_settings' );
+    $selected_pages = isset( $options['selected_pages'] ) ? (array) $options['selected_pages'] : array();
+    
+    $pages = get_pages();
+    
+    echo '<select name="qeb_settings[selected_pages][]" multiple class="regular-text">';
+    foreach ( $pages as $page ) {
+        $page_id = $page->ID;
+        $page_title = $page->post_title;
+        $selected = in_array( $page_id, $selected_pages ) ? 'selected' : '';
+        echo '<option value="' . esc_attr( $page_id ) . '" ' . $selected . '>' . esc_html( $page_title ) . '</option>';
+    }
+    echo '</select>';
+    echo '<p class="description">Select one or more pages to display the button on. Hold down Ctrl (Windows) or Cmd (Mac) to select multiple pages.</p>';
+}
+
+function qeb_include_child_pages_callback() {
+    $options = get_option( 'qeb_settings' );
+    $include_children = isset( $options['include_child_pages'] ) ? 1 : 0;
+    ?>
+    <label>
+        <input type="checkbox" name="qeb_settings[include_child_pages]" value="1" <?php checked( $include_children, 1 ); ?> /> 
+        Include child pages of the selected parent pages.
+    </label>
+    <?php
+}
+
 /**
  * Renders the settings page HTML.
  */
@@ -166,6 +251,32 @@ function qeb_render_button_on_frontend() {
     $button_text = isset( $options['button_text'] ) ? sanitize_text_field( $options['button_text'] ) : 'Quick Exit';
     $display_type = isset( $options['display_type'] ) ? $options['display_type'] : 'floating';
     $position = isset( $options['position'] ) ? $options['position'] : 'bottom-right';
+    $button_color = isset( $options['button_color'] ) ? sanitize_hex_color( $options['button_color'] ) : '#f44336';
+    $display_rule = isset( $options['display_rule'] ) ? $options['display_rule'] : 'all';
+    $selected_pages = isset( $options['selected_pages'] ) ? (array) $options['selected_pages'] : array();
+    $include_children = isset( $options['include_child_pages'] ) ? true : false;
+    
+    $show_button = false;
+    
+    if ( 'all' === $display_rule ) {
+        $show_button = true;
+    } elseif ( 'pages' === $display_rule && is_page() ) {
+        $current_page_id = get_the_ID();
+        if ( in_array( $current_page_id, $selected_pages ) ) {
+            $show_button = true;
+        } elseif ( $include_children ) {
+            foreach ( $selected_pages as $page_id ) {
+                if ( is_page( $current_page_id ) && has_post_parent( $current_page_id, $page_id ) ) {
+                    $show_button = true;
+                    break;
+                }
+            }
+        }
+    }
+    
+    if ( ! $show_button ) {
+        return;
+    }
 
     $container_id = '';
     $container_class = '';
@@ -184,6 +295,9 @@ function qeb_render_button_on_frontend() {
             #quick-escape-button-container.top-right { top: 0 !important; right: 0 !important; left: auto !important; bottom: auto !important; }
             #quick-escape-button-container.bottom-left { bottom: 0 !important; left: 0 !important; top: auto !important; right: auto !important; }
             #quick-escape-button-container.bottom-right { bottom: 0 !important; right: 0 !important; top: auto !important; left: auto !important; }
+            .quick-escape-button {
+                background-color: {$button_color} !important;
+            }
         ";
     } elseif ( 'bar' === $display_type ) {
         $container_id = 'quick-escape-button-bar';
@@ -211,7 +325,6 @@ function qeb_render_button_on_frontend() {
             padding: 10px 20px !important;
             font-size: 16px !important;
             cursor: pointer !important;
-            background-color: #f44336 !important;
             color: white !important;
             border: none !important;
             border-radius: 5px !important;
