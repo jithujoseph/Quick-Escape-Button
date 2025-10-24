@@ -115,7 +115,6 @@ function qeb_settings_init() {
         'qeb_include_child_pages',
         'Include Child Pages',
         'qeb_include_child_pages_callback',
-        'quickEscapeButton',
         'qeb_section_display_rules'
     );
 }
@@ -265,10 +264,14 @@ function qeb_render_button_on_frontend() {
         if ( in_array( $current_page_id, $selected_pages ) ) {
             $show_button = true;
         } elseif ( $include_children ) {
-            foreach ( $selected_pages as $page_id ) {
-                if ( is_page( $current_page_id ) && has_post_parent( $current_page_id, $page_id ) ) {
-                    $show_button = true;
-                    break;
+            // Check if the current page is a child of any selected parent page.
+            if ( $current_page_id && get_post_ancestors( $current_page_id ) ) {
+                $ancestors = get_post_ancestors( $current_page_id );
+                foreach ( $selected_pages as $page_id ) {
+                    if ( in_array( $page_id, $ancestors ) ) {
+                        $show_button = true;
+                        break;
+                    }
                 }
             }
         }
@@ -345,17 +348,35 @@ function qeb_render_button_on_frontend() {
             });
         });
     ";
-
-    // Only display the button if a valid display type is chosen.
+    
+    // Build the final HTML output.
+    $button_html = '';
     if ( ! empty( $container_id ) ) {
-        printf( '<style>%s</style>', $css );
-        printf( '<div id="%s" class="%s"><button class="quick-escape-button" data-destination="%s">%s</button></div>',
+        $button_html = sprintf(
+            '<div id="%s" class="%s"><button class="quick-escape-button" data-destination="%s">%s</button></div>',
             $container_id,
             $container_class,
             $destination_url,
             $button_text
         );
+    }
+    
+    // **APPLY FILTER HERE**
+    // Allows developers to modify the final button HTML before it is output.
+    $button_html = apply_filters( 
+        'qeb_button_html', 
+        $button_html, 
+        $options, 
+        $display_type, 
+        $position 
+    );
+
+    // Only display if the resulting HTML is not empty.
+    if ( ! empty( $button_html ) ) {
+        printf( '<style>%s</style>', $css );
+        echo $button_html;
         printf( '<script>%s</script>', $script );
     }
 }
 add_action( 'wp_footer', 'qeb_render_button_on_frontend' );
+
